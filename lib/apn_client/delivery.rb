@@ -22,7 +22,7 @@ module ApnClient
       while current_message && consecutive_failure_count < consecutive_failure_limit
         process_one_message!
       end
-      close_connection
+      release_connection
       self.finished_at = Time.now
     end
 
@@ -84,7 +84,7 @@ module ApnClient
       @connection = Connection.new(connection_config)
     end
 
-    def close_connection
+    def release_connection
       connection_pool ? connection_pool.push(@connection) : @connection.close
       @connection = nil
     end

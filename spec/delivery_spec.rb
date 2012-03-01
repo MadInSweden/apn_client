@@ -58,12 +58,12 @@ describe ApnClient::Delivery do
         @delivery.instance_variable_get(:'@connection').should == connection
       end
 
-      it "#close_connection should #push connection to connection pool and nil it out" do
+      it "#release_connection should #push connection to connection pool and nil it out" do
         connection = mock('connection')
         @delivery.instance_variable_set(:'@connection', connection)
         @pool.expects(:push).with(connection).once
 
-        @delivery.send(:close_connection)
+        @delivery.send(:release_connection)
 
         @delivery.instance_variable_get(:'@connection').should == nil
       end
@@ -86,12 +86,12 @@ describe ApnClient::Delivery do
         @delivery.instance_variable_get(:'@connection').should == connection
       end
 
-      it "#close_connection should send close to @connection and nil it out" do
+      it "#release_connection should send close to @connection and nil it out" do
         connection = mock('connection')
         connection.expects(:close).once
         @delivery.instance_variable_set(:'@connection', connection)
 
-        @delivery.send(:close_connection)
+        @delivery.send(:release_connection)
 
         @delivery.instance_variable_get(:'@connection').should == nil
       end
@@ -133,7 +133,7 @@ describe ApnClient::Delivery do
       connection.expects(:write).with(@message2)
       connection.expects(:select).times(2).returns(nil)
       delivery.stubs(:connection).returns(connection)
-      delivery.expects(:close_connection).once
+      delivery.expects(:release_connection).once
 
       delivery.process!
 
@@ -164,7 +164,7 @@ describe ApnClient::Delivery do
       connection.expects(:select).times(4).raises(RuntimeError)
       delivery.stubs(:connection).returns(connection)
       delivery.expects(:reset_connection!).times(3)
-      delivery.expects(:close_connection).once
+      delivery.expects(:release_connection).once
 
       delivery.process!
 
@@ -203,7 +203,7 @@ describe ApnClient::Delivery do
       connection.expects(:read).returns("something")
       delivery.stubs(:connection).returns(connection)
       delivery.expects(:reset_connection!).times(1)
-      delivery.expects(:close_connection).once
+      delivery.expects(:release_connection).once
 
       delivery.process!
 
