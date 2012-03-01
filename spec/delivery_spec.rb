@@ -45,6 +45,7 @@ describe ApnClient::Delivery do
       connection.expects(:write).with(@message2)
       connection.expects(:select).times(2).returns(nil)
       delivery.stubs(:connection).returns(connection)
+      delivery.expects(:close_connection).once
 
       delivery.process!
 
@@ -74,6 +75,8 @@ describe ApnClient::Delivery do
       connection.expects(:write).with(@message2)
       connection.expects(:select).times(4).raises(RuntimeError)
       delivery.stubs(:connection).returns(connection)
+      delivery.expects(:reset_connection!).times(3)
+      delivery.expects(:close_connection).once
 
       delivery.process!
 
@@ -111,6 +114,8 @@ describe ApnClient::Delivery do
       connection.expects(:select).returns(nil).in_sequence(selects)
       connection.expects(:read).returns("something")
       delivery.stubs(:connection).returns(connection)
+      delivery.expects(:reset_connection!).times(1)
+      delivery.expects(:close_connection).once
 
       delivery.process!
 

@@ -70,7 +70,7 @@ module ApnClient
       rescue Exception => e
         handle_exception!(e)
         check_message_error! unless @checked_message_error
-        close_connection
+        reset_connection!
       end
     end
 
@@ -78,8 +78,13 @@ module ApnClient
       @connection ||= Connection.new(connection_config)
     end
 
+    def reset_connection!
+      @connection.close
+      @connection = Connection.new(connection_config)
+    end
+
     def close_connection
-      @connection.close if @connection
+      @connection.close
       @connection = nil
     end
 
@@ -101,7 +106,7 @@ module ApnClient
         invoke_callback(:on_error, failed_message_id, error_code)
         self.failure_count += 1
         self.success_count -= 1
-        close_connection
+        reset_connection!
       end
     end
 
