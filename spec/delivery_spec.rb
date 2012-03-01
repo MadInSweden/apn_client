@@ -27,7 +27,95 @@ describe ApnClient::Delivery do
       delivery = create_delivery([@message1, @message2], :connection_config => @connection_config)
       delivery.connection_config.should == @connection_config
     end
+
+    it "should accept provided connection_pool" do
+      pool = mock("pool")
+      delivery = create_delivery([@message1, @message2], :connection_config => @connection_config,
+                                                         :connection_pool => pool)
+      delivery.connection_pool.should == pool
+    end
   end
+
+  describe "connection managment" do
+    before(:each) do
+      @delivery = create_delivery([@message1, @message2], :connection_config => @connection_config)
+    end
+
+    describe "with connection pool" do
+      before(:each) do
+        @pool = mock("pool")
+        @delivery.connection_pool = @pool
+      end
+
+      it "#connection should #pop connection from connection pool and memoize it" do
+        connection = mock('connection')
+        @pool.expects(:pop).once.returns(connection)
+
+        @delivery.instance_variable_set(:'@connection', nil)
+
+        @delivery.send(:connection).should == connection
+        @delivery.send(:connection).should == connection
+        @delivery.instance_variable_get(:'@connection').should == connection
+      end
+
+      it "#close_connection should #push connection to connection pool and nil it out" do
+        connection = mock('connection')
+        @delivery.instance_variable_set(:'@connection', connection)
+        @pool.expects(:push).with(connection).once
+
+        @delivery.send(:close_connection)
+
+        @delivery.instance_variable_get(:'@connection').should == nil
+      end
+
+    end
+
+    describe "without connection pool" do
+      before(:each) do
+        @delivery.connection_pool = nil
+      end
+
+      it "#connection should create new ApnClient::Connection and memoize it" do
+        connection = mock('connection')
+        ApnClient::Connection.expects(:new).once.returns(connection)
+
+        @delivery.instance_variable_set(:'@connection', nil)
+
+        @delivery.send(:connection).should == connection
+        @delivery.send(:connection).should == connection
+        @delivery.instance_variable_get(:'@connection').should == connection
+      end
+
+      it "#close_connection should send close to @connection and nil it out" do
+        connection = mock('connection')
+        connection.expects(:close).once
+        @delivery.instance_variable_set(:'@connection', connection)
+
+        @delivery.send(:close_connection)
+
+        @delivery.instance_variable_get(:'@connection').should == nil
+      end
+
+    end
+
+    describe "#reset_connection!" do
+      it "should close old connection and assign a new one to @connection" do
+        connection = mock('connection')
+        connection.expects(:close).once
+        @delivery.instance_variable_set(:'@connection', connection)
+
+        new_connection = mock('connection')
+        ApnClient::Connection.stubs(:new).returns(new_connection)
+
+        @delivery.send(:reset_connection!)
+
+        @delivery.instance_variable_get(:'@connection').should == new_connection
+      end
+    end
+
+  end
+
+
 
   describe "#process!" do
     it "can deliver to all messages successfully and invoke on_write callback" do
