@@ -14,7 +14,7 @@ describe ApnClient::Delivery do
       :alert => "New version of the app is out. Get it now in the app store!",
       :badge => 1
     )
-    @message2 = ApnClient::Message.new(token2, payload2, :message_id => 2)
+    @message2 = ApnClient::Message.new(token2, payload2)
 
     @connection_config = {
         :host => 'gateway.push.apple.com',
@@ -130,7 +130,16 @@ describe ApnClient::Delivery do
         }
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
+
       connection = mock('connection')
+
+      connection.expects(:next_message_id).returns(5)
+      @message2.expects(:message_id=).with(5)
+      @message1.expects(:message_id=).never
+
+      apns = mock('apnsstr')
+      @message2.stubs(:to_apns).returns(apns)
+
       connection.expects(:write).with(@message1.to_apns)
       connection.expects(:write).with(@message2.to_apns)
       connection.expects(:select).times(2).returns(nil)
@@ -161,6 +170,14 @@ describe ApnClient::Delivery do
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
       connection = mock('connection')
+
+      connection.expects(:next_message_id).returns(4)
+      @message2.expects(:message_id=).with(4)
+      @message1.expects(:message_id=).never
+
+      apns = mock('apnsstr')
+      @message2.stubs(:to_apns).returns(apns)
+
       connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
       connection.expects(:write).with(@message2.to_apns)
       connection.expects(:select).times(4).raises(RuntimeError)
@@ -197,6 +214,14 @@ describe ApnClient::Delivery do
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
       connection = mock('connection')
+
+      connection.expects(:next_message_id).returns(6)
+      @message2.expects(:message_id=).with(6)
+      @message1.expects(:message_id=).never
+
+      apns = mock('apnsstr')
+      @message2.stubs(:to_apns).returns(apns)
+
       connection.expects(:write).with(@message1.to_apns)
       connection.expects(:write).with(@message2.to_apns)
       selects = sequence('selects')

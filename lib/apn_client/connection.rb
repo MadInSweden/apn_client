@@ -13,6 +13,8 @@ module ApnClient
     # @param [String] certificate_passphrase the passphrase of the certificate, can be empty
     # @param [Float] select_timeout the timeout (seconds) used when doing IO.select on the socket (default 0.1)
     def initialize(config = {})
+      @message_id = 0
+
       NamedArgs.assert_valid!(config,
         :required => [:host, :port, :certificate, :certificate_passphrase],
         :optional => [:select_timeout])
@@ -21,7 +23,17 @@ module ApnClient
       connect_to_socket
     end
 
+    # We limit this to 4096 since we
+    def next_message_id
+      if @message_id == (8**4)
+        @message_id = 1
+      else
+        @message_id += 1
+      end
+    end
+
     def close
+      @message_id = 0
       ssl_socket.close
       tcp_socket.close
       self.ssl_socket = nil

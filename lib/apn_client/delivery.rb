@@ -66,6 +66,7 @@ module ApnClient
     
     def process_one_message!
       begin
+        check_message_id!
         write_message!
         check_message_error!
       rescue Exception => e
@@ -87,6 +88,10 @@ module ApnClient
     def release_connection
       connection_pool ? connection_pool.push(@connection) : @connection.close
       @connection = nil
+    end
+
+    def check_message_id!
+      current_message.message_id ||= connection.next_message_id
     end
 
     def write_message!

@@ -39,6 +39,19 @@ describe ApnClient::Connection do
     end
   end
 
+  describe "#next_message_id" do
+    it "should loop output from 1 upto 4096" do
+      connection = ApnClient::Connection.new(valid_config)
+      1.upto(4096) do |n|
+        connection.next_message_id.should == n
+      end
+      1.upto(4096) do |n|
+        connection.next_message_id.should == n
+      end
+    end
+
+  end
+
   describe "#close" do
     it "closes ssl and tcp sockets and sets them to nil" do
       if certificate_exists?
