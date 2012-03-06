@@ -5,8 +5,8 @@ require "apn_client/version"
 Gem::Specification.new do |s|
   s.name        = "apn_client"
   s.version     = ApnClient::VERSION
-  s.authors     = ["Peter Marklund"]
-  s.email       = ["peter@marklunds.com"]
+  s.authors     = ["Peter Marklund", "Anders Carling"]
+  s.email       = ["peter@marklunds.com", "anders.carling@d05.se"]
   s.homepage    = ""
   s.summary     = %q{Library for sending Apple Push Notifications to iOS devices from Ruby}
   s.description = %q{Uses the "enhanced format" Apple protocol and deals with errors and failures when broadcasting to many devices. Includes support for talking to the Apple Push Notification Feedback service for dealing with uninstalled apps.}
@@ -20,6 +20,7 @@ Gem::Specification.new do |s|
 
   s.add_dependency "yajl-ruby"
 
+  s.add_development_dependency "rake"
   s.add_development_dependency "rspec"
   s.add_development_dependency "mocha"
   s.add_development_dependency "yard"
