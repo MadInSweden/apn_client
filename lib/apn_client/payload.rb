@@ -22,10 +22,15 @@ module ApnClient
     # Creates a payload that's used by ApnClient::Message to build
     # message to send to APN.
     #
-    # @param [Hash] rootless_payload The payload to send to apple, without the 'aps' root node.
+    # @param [Hash] rootless_aps The aps data to send to apple, without the 'aps' root node.
+    # @param [Hash] rootless_customs The custom data to send to apple, without the 'custom' root node.
     #
-    def initialize(rootless_payload)
-      @json_str = Yajl.dump({'aps' => rootless_payload}).freeze
+    def initialize(rootless_aps, rootless_custom = nil)
+      payload = {}
+      payload['aps'] = rootless_aps
+      payload['custom'] = rootless_custom if rootless_custom
+
+      @json_str = Yajl.dump(payload).freeze
       @bytesize = @json_str.bytesize
 
       check_size!
