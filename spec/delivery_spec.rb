@@ -2,24 +2,26 @@ require 'spec_helper'
 
 describe ApnClient::Delivery do
   before(:each) do
-    @message1 = ApnClient::Message.new(
-      :message_id => 1,
-      :device_token => "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099",
+    token1 = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
+    payload1 = ApnClient::Payload.new(
       :alert => "New version of the app is out. Get it now in the app store!",
       :badge => 2
     )
-    @message2 = ApnClient::Message.new(
-      :message_id => 2,
-      :device_token => "6a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044",
+    @message1 = ApnClient::Message.new(token1, payload1, :message_id => 1)
+
+    token2 = "6a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044"
+    payload2 = ApnClient::Payload.new(
       :alert => "New version of the app is out. Get it now in the app store!",
       :badge => 1
     )
+    @message2 = ApnClient::Message.new(token2, payload2, :message_id => 2)
+
     @connection_config = {
         :host => 'gateway.push.apple.com',
         :port => 2195,
         :certificate => "certificate",
         :certificate_passphrase => ''
-    }    
+    }
   end
 
   describe "#initialize" do
@@ -129,8 +131,8 @@ describe ApnClient::Delivery do
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
       connection = mock('connection')
-      connection.expects(:write).with(@message1)
-      connection.expects(:write).with(@message2)
+      connection.expects(:write).with(@message1.to_apns)
+      connection.expects(:write).with(@message2.to_apns)
       connection.expects(:select).times(2).returns(nil)
       delivery.stubs(:connection).returns(connection)
       delivery.expects(:release_connection).once
@@ -159,8 +161,8 @@ describe ApnClient::Delivery do
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
       connection = mock('connection')
-      connection.expects(:write).with(@message1).times(3).raises(RuntimeError)
-      connection.expects(:write).with(@message2)
+      connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
+      connection.expects(:write).with(@message2.to_apns)
       connection.expects(:select).times(4).raises(RuntimeError)
       delivery.stubs(:connection).returns(connection)
       delivery.expects(:reset_connection!).times(3)
@@ -195,8 +197,8 @@ describe ApnClient::Delivery do
       delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
       connection = mock('connection')
-      connection.expects(:write).with(@message1)
-      connection.expects(:write).with(@message2)
+      connection.expects(:write).with(@message1.to_apns)
+      connection.expects(:write).with(@message2.to_apns)
       selects = sequence('selects')
       connection.expects(:select).returns("something").in_sequence(selects)
       connection.expects(:select).returns(nil).in_sequence(selects)

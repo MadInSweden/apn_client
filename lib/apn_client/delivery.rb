@@ -91,7 +91,7 @@ module ApnClient
 
     def write_message!
       @checked_message_error = false
-      connection.write(current_message)
+      connection.write(current_message.to_apns)
       self.exception_count = 0; self.consecutive_failure_count = 0; self.success_count += 1
       invoke_callback(:on_write, current_message)
       next_message!
