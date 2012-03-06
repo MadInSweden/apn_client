@@ -29,7 +29,7 @@ module ApnClient
     end
 
      def write(arg)
-       ssl_socket.write(arg.to_s)
+       ssl_socket.write(arg)
      end
 
      def read(*args)

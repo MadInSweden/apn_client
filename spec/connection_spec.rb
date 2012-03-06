@@ -52,12 +52,14 @@ describe ApnClient::Connection do
 
   describe "#write" do
     it "invokes write on the ssl socket" do
+      message = mock('message')
+
       ApnClient::Connection.any_instance.expects(:connect_to_socket)
       connection = ApnClient::Connection.new(valid_config)
       ssl_socket = mock('ssl_socket')
-      ssl_socket.expects(:write).with('foo')
+      ssl_socket.expects(:write).with(message)
       connection.expects(:ssl_socket).returns(ssl_socket)
-      connection.write(:foo)
+      connection.write(message)
     end
   end
 
