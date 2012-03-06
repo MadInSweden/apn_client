@@ -30,7 +30,7 @@ describe ApnClient::Payload do
       payload = ApnClient::Payload.new({:sound => 'l.aif'})
 
       # correct
-      JSON.parse(payload.to_json).should == {'aps' => {'sound' => 'l.aif'}}
+      Yajl.load(payload.to_json).should == {'aps' => {'sound' => 'l.aif'}}
 
       # memoized
       payload.to_json.object_id == payload.to_json.object_id

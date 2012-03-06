@@ -20,7 +20,6 @@ Gem::Specification.new do |s|
 
   s.add_dependency "yajl-ruby"
 
-  s.add_development_dependency "json"
   s.add_development_dependency "rspec"
   s.add_development_dependency "mocha"
   s.add_development_dependency "yard"
