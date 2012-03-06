@@ -18,6 +18,12 @@ module ApnClient
   end
 
   class Payload
+
+    # Creates a payload that's used by ApnClient::Message to build
+    # message to send to APN.
+    #
+    # @param [Hash] rootless_payload The payload to send to apple, without the 'aps' root node.
+    #
     def initialize(rootless_payload)
       @json_str = Yajl.dump({'aps' => rootless_payload}).freeze
       @bytesize = @json_str.bytesize
@@ -25,10 +31,12 @@ module ApnClient
       check_size!
     end
 
+    # Returns bytesize of JSON payload
     def bytesize
       @bytesize
     end
 
+    # Returns JSON payload
     def to_json
       @json_str
     end
