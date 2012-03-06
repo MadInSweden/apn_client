@@ -103,7 +103,7 @@ describe ApnClient::Connection do
 
   def valid_config
     {
-        :host => 'gateway.push.apple.com',
+        :host => 'gateway.sandbox.push.apple.com',
         :port => 2195,
         :certificate => IO.read(certificate_path),
         :certificate_passphrase => ''
