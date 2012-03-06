@@ -7,6 +7,11 @@ This is a RubyGem that allows sending of Apple Push Notifications to iOS devices
 * Broadcasting of notifications to a large number of devices in a reliable fashion
 * Dealing with errors (via the enhanced format Apple protocol) when sending notifications
 
+## Upgrade note
+Please note that in this forked version (1.0.0.footballaddicts) we've changed the syntax for creating messages quite a lot. We've done this in order to separate the expensive part of the message creation (payload serialization) into a separate class, which allows us to reuse payloads for multiple messages and is an absolutly essential part of sending tens of thousands of messages *fast*.
+
+We've also added support for an optional, externaly defined, ConnectionPool (basicly an object supporting #push and #pop that's preloaded with a bunch of ApnClient::Connection instances).
+
 ## Usage
 
 ### Delivering Your Messages
@@ -14,19 +19,17 @@ This is a RubyGem that allows sending of Apple Push Notifications to iOS devices
 ```
 require 'apn_client'
 
-message1 = ApnClient::Message.new(
-  :message_id => 1,
-  :device_token => "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099",
+payload = ApnClient::Payload.new(
   :alert => "New version of the app is out. Get it now in the app store!",
   :badge => 2
 )
-message2 = ApnClient::Message.new(
-  :message_id => 2,
-  :device_token => "6a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044",
-  :alert => "New version of the app is out. Get it now in the app store!",
-  :badge => 1
+message1 = ApnClient::Message.new("7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099", payload, :message_id => 1)
+message2 = ApnClient::Message.new("6a5d8de123923912ba744a2a238203aef82d1d98eac283e830533b7c6bf1a100", payload, :message_id => 2)
+message3 = ApnClient::Message.new("6a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044",
+  ApnClient::Payload.new(:alert => "New version of the app is out. Get it now in the app store!", :badge => 1),
+  :expires_at => (Time.now + 24*60*60)
 )
-delivery = ApnClient::Delivery.new([message1, message2],
+delivery = ApnClient::Delivery.new([message1, message2, message3],
   :callbacks => {
     :on_write => lambda { |d, m| puts "Wrote message #{m}" },
     :on_exception => lambda { |d, e| puts "Exception #{e} raised when delivering message #{m}" },
@@ -46,22 +49,18 @@ delivery.process!
 puts "Delivered successfully to #{delivery.success_count} out of #{delivery.total_count} devices in #{delivery.elapsed} seconds"
 ```
 
-One potential gotcha to watch out for is that the device token for a message is per device and per application. This means
-that different apps on the same device will have different tokens. The Apple documentation uses phone numbers as an analogy
-to explain what a device token is.
-
 ### Checking for Feedback
 
 TODO
 
 ## Dependencies
 
-The payload of an APN message is a JSON formated hash (containing alert message, badge count, content available etc.) and therefore a JSON library needs to be present. This gem requires a Hash#to_json method to be defined (hashes need to respond
-to to_json and return valid JSON). If you for example have the json gem or the rails gem in your environment then this requirement is fulfilled.
+The payload of an APN message is a JSON formated hash (containing alert message, badge count, content available etc.) and therefore a JSON library needs to be present. We're depending on "yajl-ruby" to encode our JSON.
 
 The gem is tested on MRI 1.9.2.
 
 ## Credits
+[Football Addicts](http://www.footballaddicts.com/our-apps/index.html) has made major changes to this fork of the gem.
 
 This gem is an extraction of production code at [Mag+](http://www.magplus.com) and both [Dennis Rogenius](https://github.com/denro) and [Lennart Friden](https://github.com/DevL) made important contributions along the way.
 
