@@ -3,7 +3,7 @@ require 'yajl'
 module ApnClient
   PAYLOAD_MAX_SIZE = 256
 
-  class PayloadToLarge < ArgumentError
+  class PayloadTooLarge < ArgumentError
     attr_reader :object
 
     def initialize(object)
@@ -48,7 +48,7 @@ module ApnClient
 
     private
       def check_size!
-        raise(PayloadToLarge.new(self)) if self.bytesize > PAYLOAD_MAX_SIZE
+        raise(PayloadTooLarge.new(self)) if self.bytesize > PAYLOAD_MAX_SIZE
       end
   end
 end

@@ -3,12 +3,12 @@ require 'spec_helper'
 describe ApnClient::Payload do
   describe "#initialize" do
     it "should raise if hash generates to large json" do
-      lambda { ApnClient::Payload.new('a'*246) }.should_not raise_error(ApnClient::PayloadToLarge)
-      lambda { ApnClient::Payload.new('a'*247) }.should     raise_error(ApnClient::PayloadToLarge)
+      lambda { ApnClient::Payload.new('a'*246) }.should_not raise_error(ApnClient::PayloadTooLarge)
+      lambda { ApnClient::Payload.new('a'*247) }.should     raise_error(ApnClient::PayloadTooLarge)
       begin
         ApnClient::Payload.new('a'*247)
       rescue => e
-        e.should be_a(ApnClient::PayloadToLarge)
+        e.should be_a(ApnClient::PayloadTooLarge)
         e.object.should be_a(ApnClient::Payload)
         e.message.should include('257 bytes')
       end
