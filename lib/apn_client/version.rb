@@ -1,3 +1,3 @@
 module ApnClient
-  VERSION = "1.1.0.footballaddicts"
+  VERSION = "1.1.1.footballaddicts"
 end
