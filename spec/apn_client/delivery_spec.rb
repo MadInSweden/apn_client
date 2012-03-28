@@ -135,10 +135,6 @@ describe ApnClient::Delivery do
 
         connection = mock('connection')
 
-        connection.expects(:next_message_id).returns(5)
-        @message2.expects(:message_id=).with(5)
-        @message1.expects(:message_id=).never
-
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
@@ -172,10 +168,6 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
-
-        connection.expects(:next_message_id).returns(4)
-        @message2.expects(:message_id=).with(4)
-        @message1.expects(:message_id=).never
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
@@ -216,10 +208,6 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
-
-        connection.expects(:next_message_id).returns(6)
-        @message2.expects(:message_id=).with(6)
-        @message1.expects(:message_id=).never
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
@@ -260,10 +248,6 @@ describe ApnClient::Delivery do
 
         connection = mock('connection')
 
-        connection.expects(:next_message_id).returns(5)
-        @message2.expects(:message_id=).with(5)
-        @message1.expects(:message_id=).never
-
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
@@ -297,10 +281,6 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
-
-        connection.expects(:next_message_id).returns(4)
-        @message2.expects(:message_id=).with(4)
-        @message1.expects(:message_id=).never
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
@@ -341,10 +321,6 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
-
-        connection.expects(:next_message_id).returns(6)
-        @message2.expects(:message_id=).with(6)
-        @message1.expects(:message_id=).never
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)

@@ -68,7 +68,6 @@ module ApnClient
     
     def process_one_message!
       begin
-        check_message_id!
         write_message!
         check_message_error!
       rescue Exception => e
@@ -92,9 +91,6 @@ module ApnClient
       @connection = nil
     end
 
-    def check_message_id!
-      current_message.message_id ||= connection.next_message_id
-    end
 
     def write_message!
       @checked_message_error = false

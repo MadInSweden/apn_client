@@ -1,24 +1,9 @@
 module ApnClient
 
-  class MessageIdIsNil < RuntimeError
-    attr_reader :object
-
-    def initialize(object)
-      @object = object
-      super(self.message)
-    end
-
-    def message
-      "Message has no message_id."
-    end
-
-  end
-
   class Message
 
     # Attributes
-    attr_accessor :message_id
-    attr_reader :device_token, :expires_at, :payload
+    attr_reader :message_id, :device_token, :expires_at, :payload
 
     # Creates an APN message to to be sent over SSL to the APN service.
     #
@@ -32,13 +17,11 @@ module ApnClient
       @payload      = payload
 
       @expires_at = (options[:expires_at] ? options[:expires_at] : (Time.now + 30*60*60*24)).to_i
-      @message_id =  options[:message_id]
+      @message_id =  options[:message_id] || MessageId.next
     end
 
     # Pack APNS message in enhanced binary format
     def to_apns
-      raise MessageIdIsNil.new(self) unless self.message_id
-
       [
         1,
         self.message_id,
@@ -49,7 +32,7 @@ module ApnClient
         0,
         self.payload.bytesize,
         self.payload.to_json
-      ].pack('ciiccH*cca*')
+      ].pack('cIiccH*cca*')
     end
   end
 end

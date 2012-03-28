@@ -17,16 +17,20 @@ describe ApnClient::Message do
       t = Time.now
       Time.stubs(:now).returns(t)
 
+      ApnClient::MessageId.expects(:next).returns(1 << (4*7))
+
       m = ApnClient::Message.new(@device_token, @alert_payload)
       m.device_token.should == @device_token
       m.payload.should      == @alert_payload
-      m.message_id.should   == nil
+      m.message_id.should   == (1 << (4*7))
       m.expires_at.should   == (t + 30*60*60*24).to_i
     end
 
     it "can be created with device_token, payload and message_id" do
       t = Time.now
       Time.stubs(:now).returns(t)
+
+      ApnClient::MessageId.expects(:next).never
 
       m = ApnClient::Message.new(@device_token, @alert_payload, :message_id => 1)
       m.device_token.should == @device_token
@@ -38,6 +42,8 @@ describe ApnClient::Message do
     it "can be created with device_token, payload, message_id and expires_at" do
       t = Time.now + 30*60
 
+      ApnClient::MessageId.expects(:next).never
+
       m = ApnClient::Message.new(@other_device_token, @alertbadge_payload, :message_id => 2, :expires_at => t)
       m.device_token.should == @other_device_token
       m.payload.should      == @alertbadge_payload
@@ -48,30 +54,28 @@ describe ApnClient::Message do
 
   describe "#to_apns" do
 
-    it "should pack message as apns binary package" do
-      # This was previously generated using previous gen of ApnClient::Message
-      expected_sha1_hexdigest = "ebf4f6ad18feb35dd1d77a2289e2424bc89e8444"
+    context 'with low message_id' do
+      it "should pack message as apns binary package" do
+        # This was previously generated using previous gen of ApnClient::Message
+        expected_sha1_hexdigest = "ebf4f6ad18feb35dd1d77a2289e2424bc89e8444"
 
-      token   = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
-      payload = ApnClient::Payload.new(:alert => "asd", :badge => 3, :sound => "asd.aif")
-      msg     = ApnClient::Message.new(token, payload, :message_id => 4096, :expires_at => Time.at(10920392).to_i)
+        token   = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
+        payload = ApnClient::Payload.new(:alert => "asd", :badge => 3, :sound => "asd.aif")
+        msg     = ApnClient::Message.new(token, payload, :message_id => 4096, :expires_at => Time.at(10920392).to_i)
 
-      Digest::SHA1.hexdigest(msg.to_apns).should == expected_sha1_hexdigest
+        Digest::SHA1.hexdigest(msg.to_apns).should == expected_sha1_hexdigest
+      end
     end
 
-    it "should raise error if message_id is nil" do
-      token   = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
-      payload = ApnClient::Payload.new(:alert => "asd", :badge => 3, :sound => "asd.aif")
-      msg     = ApnClient::Message.new(token, payload, :expires_at => Time.at(10920392).to_i)
+    context 'with high message_id' do
+      it "should pack message as apns binary package" do
+        expected_sha1_hexdigest = "dab1d431edbb3935f4868710c4c9f86476b369e4"
 
-      lambda { msg.to_apns }.should raise_error(ApnClient::MessageIdIsNil)
+        token   = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
+        payload = ApnClient::Payload.new(:alert => "asd", :badge => 3, :sound => "asd.aif")
+        msg     = ApnClient::Message.new(token, payload, :message_id => ((1 << (8*4)) - 1), :expires_at => Time.at(10920392).to_i)
 
-      begin
-        msg.to_apns
-      rescue => e
-        e.should be_a(ApnClient::MessageIdIsNil)
-        e.object.should == msg
-        e.message.should == "Message has no message_id."
+        Digest::SHA1.hexdigest(msg.to_apns).should == expected_sha1_hexdigest
       end
     end
 
