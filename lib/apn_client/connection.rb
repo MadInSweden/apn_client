@@ -3,73 +3,67 @@ require 'openssl'
 
 module ApnClient
   class Connection
-    attr_accessor :config, :tcp_socket, :ssl_socket
+    attr_reader :tcp_socket, :ssl_socket
 
     # Opens an SSL socket for talking to the Apple Push Notification service.
     #
     # @param [String] host the hostname to connect to
-    # @param [Fixnum] port the port to connect to
-    # @param [String] certificate the APN certificate to use
-    # @param [String] certificate_passphrase the passphrase of the certificate, can be empty
-    # @param [Float] select_timeout the timeout (seconds) used when doing IO.select on the socket (default 0.1)
+    # @param [String] cert the APN certificate to use
+    # @param [String] cert_pass the passphrase of the certificate (default empty)
     def initialize(config = {})
-      @message_id = 0
+      cert              = config[:cert]             || raise(ArgumentError, "Missing option 'cert'")
+      host              = config[:host]             || raise(ArgumentError, "Missing option 'host'")
+      pass              = config[:cert_pass]        || ''
+      port              = 2195
 
-      NamedArgs.assert_valid!(config,
-        :required => [:host, :port, :certificate, :certificate_passphrase],
-        :optional => [:select_timeout])
-      self.config = config
-      config[:select_timeout] ||= 0.1
-      connect_to_socket
-    end
+      ssl_ctx = OpenSSL::SSL::SSLContext.new
+      ssl_ctx.key = OpenSSL::PKey::RSA.new(cert, pass)
+      ssl_ctx.cert = OpenSSL::X509::Certificate.new(cert)
 
-    # We limit this to 4096 since we
-    def next_message_id
-      if @message_id == (8**4)
-        @message_id = 1
-      else
-        @message_id += 1
-      end
+      @tcp_socket = TCPSocket.new(host, port)
+      @ssl_socket = OpenSSL::SSL::SSLSocket.new(@tcp_socket, ssl_ctx)
+      @ssl_socket.sync = true
+      @ssl_socket.connect
     end
 
     def close
-      @message_id = 0
-      ssl_socket.close
-      tcp_socket.close
-      self.ssl_socket = nil
-      self.tcp_socket = nil
+      self.ssl_socket.close
+      self.tcp_socket.close
     end
 
-     def write(arg)
-       ssl_socket.write(arg)
+     def write(*args)
+       self.ssl_socket.write(*args)
      end
 
-     def read(*args)
-       ssl_socket.read(*args)
+     # Returns array [command, error_code, message_id]
+     def read_apns_error
+       @read_apns_buffer ||= ''
+
+       response = self.ssl_socket.read_nonblock(6 - @read_apns_buffer.bytesize)
+       @read_apns_buffer << response if response
+
+       if @read_apns_buffer.bytesize == 6
+         @read_apns_buffer.unpack('ccI').tap { @read_apns_buffer.clear }
+       end
+     rescue Errno::EAGAIN
+       nil
      end
 
-     def select
-       IO.select([ssl_socket], nil, nil, config[:select_timeout])
+     def readable?(timeout)
+       if res = IO.select([self.ssl_socket], nil, nil, timeout)
+         res[0].size > 0
+       else
+         nil
+       end
      end
 
-     def self.open(options = {})
-       connection = Connection.new(options)
-       yield connection
-     ensure
-       connection.close if connection
+     def availability(timeout)
+       if res = IO.select([self.ssl_socket], [self.ssl_socket], nil, timeout)
+         [res[0].size > 0, res[1].size > 0]
+       else
+         [nil, nil]
+       end
      end
 
-    private
-
-    def connect_to_socket
-      context = OpenSSL::SSL::SSLContext.new
-      context.key = OpenSSL::PKey::RSA.new(config[:certificate], config[:certificate_passphrase])
-      context.cert = OpenSSL::X509::Certificate.new(config[:certificate])
-
-      self.tcp_socket = TCPSocket.new(config[:host], config[:port])
-      self.ssl_socket = OpenSSL::SSL::SSLSocket.new(tcp_socket, context)
-      ssl_socket.sync = true
-      ssl_socket.connect
-    end
   end
 end

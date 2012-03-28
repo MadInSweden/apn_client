@@ -17,10 +17,8 @@ describe ApnClient::Delivery do
     @message2 = ApnClient::Message.new(token2, payload2)
 
     @connection_config = {
-        :host => 'gateway.push.apple.com',
-        :port => 2195,
-        :certificate => "certificate",
-        :certificate_passphrase => ''
+      :host => 'gateway.push.apple.com',
+      :cert => mock("certificate")
     }
   end
 
@@ -51,6 +49,7 @@ describe ApnClient::Delivery do
 
       it "#connection should #pop connection from connection pool and memoize it" do
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         @pool.expects(:pop).once.returns(connection)
 
         @delivery.instance_variable_set(:'@connection', nil)
@@ -62,6 +61,7 @@ describe ApnClient::Delivery do
 
       it "#release_connection should #push connection to connection pool and nil it out" do
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         @delivery.instance_variable_set(:'@connection', connection)
         @pool.expects(:push).with(connection).once
 
@@ -79,6 +79,7 @@ describe ApnClient::Delivery do
 
       it "#connection should create new ApnClient::Connection and memoize it" do
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         ApnClient::Connection.expects(:new).once.returns(connection)
 
         @delivery.instance_variable_set(:'@connection', nil)
@@ -90,6 +91,7 @@ describe ApnClient::Delivery do
 
       it "#release_connection should send close to @connection and nil it out" do
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         connection.expects(:close).once
         @delivery.instance_variable_set(:'@connection', connection)
 
@@ -103,10 +105,12 @@ describe ApnClient::Delivery do
     describe "#reset_connection!" do
       it "should close old connection and assign a new one to @connection" do
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         connection.expects(:close).once
         @delivery.instance_variable_set(:'@connection', connection)
 
         new_connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
         ApnClient::Connection.stubs(:new).returns(new_connection)
 
         @delivery.send(:reset_connection!)
@@ -134,13 +138,14 @@ describe ApnClient::Delivery do
 
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
         connection.expects(:write).with(@message1.to_apns)
         connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:select).times(2).returns(nil)
+        connection.expects(:readable?).with(0.1).times(2).returns(nil)
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:release_connection).once
 
@@ -168,13 +173,14 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
         connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
         connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:select).times(4).raises(RuntimeError)
+        connection.expects(:readable?).with(0.1).times(4).raises(RuntimeError)
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:reset_connection!).times(3)
         delivery.expects(:release_connection).once
@@ -208,6 +214,7 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
@@ -215,9 +222,9 @@ describe ApnClient::Delivery do
         connection.expects(:write).with(@message1.to_apns)
         connection.expects(:write).with(@message2.to_apns)
         selects = sequence('selects')
-        connection.expects(:select).returns("something").in_sequence(selects)
-        connection.expects(:select).returns(nil).in_sequence(selects)
-        connection.expects(:read).returns("something")
+        connection.expects(:readable?).with(0.1).returns("something").in_sequence(selects)
+        connection.expects(:readable?).with(0.1).returns(nil).in_sequence(selects)
+        connection.ssl_socket.expects(:read).returns("something")
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:reset_connection!).times(1)
         delivery.expects(:release_connection).once
@@ -247,13 +254,14 @@ describe ApnClient::Delivery do
 
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
         connection.expects(:write).with(@message1.to_apns)
         connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:select).times(2).returns(nil)
+        connection.expects(:readable?).with(0.1).times(2).returns(nil)
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:release_connection).once
 
@@ -281,13 +289,14 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
 
         connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
         connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:select).times(4).raises(RuntimeError)
+        connection.expects(:readable?).with(0.1).times(4).raises(RuntimeError)
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:reset_connection!).times(3)
         delivery.expects(:release_connection).once
@@ -321,6 +330,7 @@ describe ApnClient::Delivery do
         delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
 
         connection = mock('connection')
+        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
 
         apns = mock('apnsstr')
         @message2.stubs(:to_apns).returns(apns)
@@ -328,9 +338,9 @@ describe ApnClient::Delivery do
         connection.expects(:write).with(@message1.to_apns)
         connection.expects(:write).with(@message2.to_apns)
         selects = sequence('selects')
-        connection.expects(:select).returns("something").in_sequence(selects)
-        connection.expects(:select).returns(nil).in_sequence(selects)
-        connection.expects(:read).returns("something")
+        connection.expects(:readable?).with(0.1).returns("something").in_sequence(selects)
+        connection.expects(:readable?).with(0.1).returns(nil).in_sequence(selects)
+        connection.ssl_socket.expects(:read).returns("something")
         delivery.stubs(:connection).returns(connection)
         delivery.expects(:reset_connection!).times(1)
         delivery.expects(:release_connection).once

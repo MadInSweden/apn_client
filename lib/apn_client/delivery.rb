@@ -118,8 +118,8 @@ module ApnClient
       message_id = error_code = nil
       begin
         select_return = nil
-        if connection && select_return = connection.select
-          response = connection.read(6)
+        if connection && select_return = connection.readable?(connection_config[:select_timeout] || 0.1)
+          response = connection.ssl_socket.read(6)
           command, error_code, message_id = response.unpack('cci') if response
         else
           invoke_callback(:on_nil_select)

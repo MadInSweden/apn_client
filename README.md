@@ -39,10 +39,9 @@ delivery = ApnClient::Delivery.new([message1, message2, message3],
   :consecutive_failure_limit => 10, # If more than 10 devices in a row fail, we abort the whole delivery
   :exception_limit => 3, # If a device raises an exception three times in a row we fail/skip the device and move on
   :connection_config => {
-  	:host => 'gateway.push.apple.com', # For sandbox, use: gateway.sandbox.push.apple.com
-  	:port => 2195,
-  	:certificate => IO.read("my_apn_certificate.pem"),
-  	:certificate_passphrase => ''
+    :host => 'gateway.push.apple.com', # For sandbox, use: gateway.sandbox.push.apple.com
+    :cert => IO.read("my_apn_certificate.pem"),
+    :cert_pass => ''
   }
 )
 delivery.process!
