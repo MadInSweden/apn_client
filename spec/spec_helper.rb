@@ -1,4 +1,6 @@
-require 'json'
+require 'rubygems'
+require 'bundler/setup'
+
 require 'apn_client'
 
 RSpec.configure do |config|
