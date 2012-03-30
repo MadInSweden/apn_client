@@ -1,156 +1,206 @@
 module ApnClient
+  class ExceptionLimitReached < Exception
+    attr_reader :limit, :exceptions
+
+    def initialize(delivery)
+      @limit      = delivery.exception_limit
+      @exceptions = delivery.exceptions
+      super(self.message)
+    end
+
+    def message
+      "Exception limit (#{self.limit}) reached, got these exceptions:\n\n".tap do |msg|
+        self.exceptions.each { |e| msg << e.inspect << "\n\n" }
+      end
+    end
+  end
+
   class Delivery
-    attr_accessor :messages, :callbacks, :consecutive_failure_limit, :exception_limit, :sleep_on_exception, :connection_config,
-      :exception_count, :success_count, :failure_count, :consecutive_failure_count, :connection_pool,
-      :started_at, :finished_at
+    # Required
+    attr_reader :messages, :connection_config, :connection_pool,
+                :exception_limit, :exception_limit_per_message,
+                :poll_timeout, :final_timeout, :callbacks,
+                :exceptions, :exceptions_per_message
 
-    # Creates a new APN delivery
+    # Optional
+    attr_reader :connection_pool
+
+    # Public: Manages deliveries by looping over enumerable set of
+    #         messages and sending them through ApnClient::Delivery
+    #         instances.
     #
-    # @param [#next] messages should be Enumerator type object that responds to #next. If it's an Array #shift will be used instead.
-    # @param [Hash] connection_config configuration parameters for the APN connection (port, host etc.) (required)
+    # messages - A mutable array of ApnClient::Messages
+    # options  - A hash of options
+    #            :connection_config             - A connection config hash used to initialize ApnClient::Connection.
+    #                                             (required)
+    #            :connection_pool               - A connection pool responding to #pop and #push containing a set of ApnClient::Connection's.
+    #                                             (optional, default: nil)
+    #            :exception_limit               - An integer specifying maximum exceptions before raising ExceptionLimitReached.
+    #                                             (optional, default: 20)
+    #            :exception_limit_per_message   - An integer specifying maximum exceptions on sending
+    #                                             specific message before moving on to the next message.
+    #                                             (optional, default: 3)
+    #            :poll_timeout                  - A Float timeout (seconds) used when doing IO.select on the socket.
+    #                                             (optional, default 0.1)
+    #            :final_timeout                 - A Float timeout (seconds) used when doing final IO.select on the socket.
+    #                                             (optional, default 2.0)
+    #            :callbacks                     - A hash with callbacks, available are:
+    #                                             :on_write proc(ApnClient::Delivery, ApnClient::Message)
+    #                                             :on_message_skip proc(ApnClient::Delivery, ApnClient::Message)
+    #                                             :on_apns_error proc(ApnClient::Delivery, error_code, message_id)
+    #                                             (optional, default: {})
+    #
     def initialize(messages, options = {})
-      self.messages = messages
-      initialize_options(options)
-      self.exception_count = 0
-      self.success_count = 0
-      self.failure_count = 0
-      self.consecutive_failure_count = 0
+      @messages = messages.to_enum
+
+      # Required
+      @connection_config = options[:connection_config] || raise(ArgumentError, "Missing option 'connection_config'")
+
+      # Optional
+      @connection_pool               = options[:connection_pool]
+      @exception_limit               = options[:exception_limit] || 20
+      @exception_limit_per_message   = options[:exception_limit_per_message] || 3
+
+      @final_timeout = options[:final_timeout] || 2.0
+      @poll_timeout  = options[:poll_timeout]  || 0.1
+
+      @callbacks = options[:callbacks] || {}
+
+      @exceptions_per_message = Hash.new
+      @exceptions             = []
+
+      # Lazy loaded, will be a ApnClient::Connection during #process! call
+      @connection = nil
     end
 
+    # Public: Process (send) all messages in #messages to Apple.
+    #
+    # * If errors occur, the message is  retried a maximum of #exception_limit_per_message times.
+    # * If apple writes error message, it will be read and message list will be rewinded to the
+    #   apple specified message_id. If message with id is not in @messages, the message list
+    #   pointer will not be changed.
+    #
+    # Raises ExceptionLimitReached if more then self.exception_limit exceptions occur.
     def process!
-      self.started_at = Time.now
-      while current_message && consecutive_failure_count < consecutive_failure_limit
-        process_one_message!
+      loop do
+        if has_next_message?
+          readable, writable = connection.availability(self.poll_timeout)
+
+          if readable
+            read_error
+          end
+
+          if writable and has_next_message?
+            write_message
+            next_message!
+          end
+        else
+          read_final_error
+          return unless has_next_message?
+        end
       end
+
+    rescue Exception => e
+      read_final_error rescue nil
+      reset_connection!
+
+      exception!(e)
+      retry if has_next_message?
+    ensure
       release_connection
-      self.finished_at = Time.now
-    end
-
-    def elapsed
-      if started_at
-        finished_at ? (finished_at - started_at) : (Time.now - started_at)
-      else
-        0
-      end
-    end
-
-    def total_count
-      success_count + failure_count
     end
 
     private
 
-    def initialize_options(options)
-      NamedArgs.assert_valid!(options,
-        :optional => [:callbacks, :consecutive_failure_limit, :exception_limit, :sleep_on_exception, :connection_pool],
-        :required => [:connection_config])
-      NamedArgs.assert_valid!(options[:callbacks], :optional => [:on_write, :on_error, :on_nil_select, :on_read_exception, :on_exception, :on_failure])
-      self.callbacks = options[:callbacks]
-      self.consecutive_failure_limit = options[:consecutive_failure_limit] || 10
-      self.exception_limit = options[:exception_limit] || 3
-      self.sleep_on_exception = options[:sleep_on_exception] || 1
-      self.connection_config = options[:connection_config]
-      self.connection_pool = options[:connection_pool]
-    end
-    
-    def current_message
-      return @current_message if @current_message
-      next_message!
-    end
-    
-    def next_message!
-      @current_message = begin
-        messages.respond_to?(:next) ? messages.next : messages.shift
+      ### Main perform loop helpers
+
+      def read_final_error
+        read_error if connection.readable?(self.final_timeout)
+      end
+
+      def read_error
+        command, error_code, message_id = connection.read_apns_error
+        if message_id
+          invoke_callback(:on_apns_error, error_code, message_id)
+          rewind_messages!(message_id)
+        end
+      end
+
+      def write_message
+        next_message.message_id ||= connection.next_message_id
+        connection.write(next_message.to_apns)
+        invoke_callback(:on_write, next_message)
+      end
+
+      def exception!(e)
+        self.exceptions << e
+        if self.exceptions.size >= self.exception_limit
+          raise ExceptionLimitReached.new(self)
+        end
+
+        self.exceptions_per_message[next_message] ||= []
+        self.exceptions_per_message[next_message] << e
+        if self.exceptions_per_message[next_message].size >= self.exception_limit_per_message
+          invoke_callback(:on_message_skip, next_message)
+          next_message!
+        end
+      end
+
+      ### Connection Managment
+
+      def connection
+        @connection ||= self.connection_pool ? self.connection_pool.pop : Connection.new(self.connection_config)
+      end
+
+      def reset_connection!
+        @connection.close
+        @connection = Connection.new(self.connection_config)
+      end
+
+      def release_connection
+        self.connection_pool ? self.connection_pool.push(@connection) : @connection.close
+        @connection = nil
+      end
+
+      ### Message managment
+
+      # Internal: Returns the next message without incrementing pointer
+      def next_message
+        self.messages.peek
       rescue StopIteration
         nil
       end
-    end
-    
-    def process_one_message!
-      begin
-        write_message!
-        check_message_error!
-      rescue Exception => e
-        handle_exception!(e)
-        check_message_error! unless @checked_message_error
-        reset_connection!
+
+      # Internal: Check if there is a next_message
+      alias has_next_message? next_message
+
+      # Internal: Returns the next message and increments pointer
+      def next_message!
+        self.messages.next
+      rescue StopIteration
+        nil
       end
-    end
 
-    def connection
-      @connection ||= connection_pool ? connection_pool.pop : Connection.new(connection_config)
-    end
+      # Internal: Rewind to message _after_ message with message_id if it's
+      #           available in #messages
+      def rewind_messages!(message_id)
 
-    def reset_connection!
-      @connection.close
-      @connection = Connection.new(connection_config)
-    end
-
-    def release_connection
-      connection_pool ? connection_pool.push(@connection) : @connection.close
-      @connection = nil
-    end
-
-
-    def write_message!
-      @checked_message_error = false
-      connection.write(current_message.to_apns)
-      self.exception_count = 0; self.consecutive_failure_count = 0; self.success_count += 1
-      invoke_callback(:on_write, current_message)
-      next_message!
-    end
-    
-    def check_message_error!
-      @checked_message_error = true
-      failed_message_id, error_code = read_apns_error
-      # NOTE: According to the APN documentation the APN service will return an error code prior to
-      # disconnecting. If we don't disconnect here we will attempt to write more messages
-      # before a broken pipe error is raised and those messages will never be delivered.
-      if failed_message_id
-        invoke_callback(:on_error, failed_message_id, error_code)
-        self.failure_count += 1
-        self.success_count -= 1
-        reset_connection!
-      end
-    end
-
-    def read_apns_error
-      message_id = error_code = nil
-      begin
-        select_return = nil
-        if connection && select_return = connection.readable?(connection_config[:select_timeout] || 0.1)
-          response = connection.ssl_socket.read(6)
-          command, error_code, message_id = response.unpack('cci') if response
-        else
-          invoke_callback(:on_nil_select)
+        if message = self.messages.find { |message| message.message_id == message_id }
+          self.messages.rewind
+          # We return after we move the pointer from message with message_id,
+          # as we want to find the first non-failed message.
+          while has_next_message?
+            return if next_message! == message
+          end
         end
-      rescue Exception => e
-        # NOTE: If we don't catch this exception then one socket read exception could break out of the whole delivery loop
-        invoke_callback(:on_read_exception, e)
+
       end
-      return message_id, error_code
-    end
 
-    def handle_exception!(e)
-      invoke_callback(:on_exception, e)
-      self.exception_count += 1
-      fail_message! if exception_limit_reached?
-      sleep(sleep_on_exception) if sleep_on_exception
-    end
+      ### Callbacks
 
-    def exception_limit_reached?
-      exception_count == exception_limit
-    end
+      def invoke_callback(name, *args)
+        self.callbacks[name].call(self, *args) if self.callbacks[name]
+      end
 
-    # # Give up on the message and move on to the next one
-    def fail_message!
-      self.failure_count += 1; self.consecutive_failure_count += 1; self.exception_count = 0
-      invoke_callback(:on_failure, current_message)
-      next_message!
-    end
-    
-    def invoke_callback(name, *args)
-      callbacks[name].call(self, *args) if callbacks[name]
-    end
   end
 end

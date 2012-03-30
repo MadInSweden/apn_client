@@ -2,377 +2,611 @@ require 'spec_helper'
 
 describe ApnClient::Delivery do
   before(:each) do
-    token1 = "7b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
+    token1 = "1b7b8de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d099"
     payload1 = ApnClient::Payload.new(
-      :alert => "New version of the app is out. Get it now in the app store!",
-      :badge => 2
-    )
-    @message1 = ApnClient::Message.new(token1, payload1, :message_id => 1)
-
-    token2 = "6a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044"
-    payload2 = ApnClient::Payload.new(
       :alert => "New version of the app is out. Get it now in the app store!",
       :badge => 1
     )
+    @message1 = ApnClient::Message.new(token1, payload1, :message_id => 1)
+
+    token2 = "2a5g4de5888bb742ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044"
+    payload2 = ApnClient::Payload.new(
+      :alert => "New version of the app is out. Get it now in the app store!",
+      :badge => 2
+    )
     @message2 = ApnClient::Message.new(token2, payload2)
+
+    token3 = "3a5g4de5888bb743ba744a2a5c8e52c6481d1deeecc283e830533b7c6bf1d044"
+    payload3 = ApnClient::Payload.new(
+      :alert => "New version of the app is out. Get it now in the app store!",
+      :badge => 3
+    )
+    @message3 = ApnClient::Message.new(token3, payload3)
 
     @connection_config = {
       :host => 'gateway.push.apple.com',
       :cert => mock("certificate")
     }
+
+    @messages = [@message1, @message2, @message3]
+    @options  = {:connection_config => @connection_config}
   end
 
-  describe "#initialize" do
-    it "initializes counts and other attributes" do
-      delivery = create_delivery([@message1, @message2], :connection_config => @connection_config)
-      delivery.connection_config.should == @connection_config
+  describe '#initialize' do
+
+    context "with valid options" do
+
+      it "initializes attributes to default values" do
+        delivery = ApnClient::Delivery.new(@messages, @options)
+        delivery.messages.to_a.should == @messages
+
+        delivery.connection_config.should == @connection_config
+        delivery.connection_pool.should be_nil
+
+        delivery.exception_limit.should == 20
+        delivery.exception_limit_per_message.should == 3
+
+        delivery.final_timeout.should == 2.0
+        delivery.poll_timeout.should  == 0.1
+
+        delivery.callbacks.should  == {}
+
+        delivery.exceptions_per_message.should == {}
+        delivery.exceptions.should == []
+      end
+
+      [
+        :connection_pool,
+        :exception_limit,
+        :exception_limit_per_message,
+        :poll_timeout,
+        :final_timeout,
+        :callbacks
+      ].each do |option|
+        context "given option #{option.inspect}" do
+          before { @options.merge!(option => (@val = mock(option.to_s))) }
+
+          it "should accept and store it" do
+            ApnClient::Delivery.new(@messages, @options).send(option).should == @val
+          end
+        end
+      end
+
     end
 
-    it "should accept provided connection_pool" do
-      pool = mock("pool")
-      delivery = create_delivery([@message1, @message2], :connection_config => @connection_config,
-                                                         :connection_pool => pool)
-      delivery.connection_pool.should == pool
+    context "with messages that doesn't respond to #to_enum" do
+      before { @messages.expects(:to_enum).raises(RuntimeError) }
+      it "should raise" do
+        begin; ApnClient::Delivery.new(@messages, @options); rescue => e; end
+        e.should be_an(RuntimeError)
+      end
+    end
+
+    context "without option connection_config" do
+      before { @options.delete(:connection_config) }
+      it "should raise" do
+        begin; ApnClient::Delivery.new(@messages, @options); rescue => e; end
+        e.should be_an(ArgumentError)
+      end
     end
   end
 
-  describe "connection managment" do
+  describe "Connection Managment methods" do
+    subject { ApnClient::Delivery.new(@messages, @options) }
     before(:each) do
-      @delivery = create_delivery([@message1, @message2], :connection_config => @connection_config)
+      subject.stubs(:connection_config).returns(@connection_config = mock('connection_config'))
     end
 
-    describe "with connection pool" do
+    context 'with connection pool' do
       before(:each) do
-        @pool = mock("pool")
-        @delivery.connection_pool = @pool
+        subject.stubs(:connection_pool).returns(@connection_pool = mock('connection_pool'))
       end
 
-      it "#connection should #pop connection from connection pool and memoize it" do
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        @pool.expects(:pop).once.returns(connection)
+      describe '#connection' do
+        it 'should #pop a connection from connection pool and cache it in @connection' do
+          @connection_pool.expects(:pop).returns(connection = mock('connection'))
+          subject.send(:connection).should == connection
+          subject.instance_variable_get(:'@connection').should == connection
 
-        @delivery.instance_variable_set(:'@connection', nil)
-
-        @delivery.send(:connection).should == connection
-        @delivery.send(:connection).should == connection
-        @delivery.instance_variable_get(:'@connection').should == connection
+          # Test that we get same instance again
+          subject.send(:connection).should be_equal(connection)
+        end
       end
 
-      it "#release_connection should #push connection to connection pool and nil it out" do
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        @delivery.instance_variable_set(:'@connection', connection)
-        @pool.expects(:push).with(connection).once
+      describe '#reset_connection!' do
+        it 'should call #close on @connection and reassign new ApnClient::Connection based on connection_config' do
+          # We should not access through #connector
+          subject.expects(:connection).never
 
-        @delivery.send(:release_connection)
+          subject.instance_variable_set(:'@connection', old_connection = mock('old connection'))
+          old_connection.expects(:close)
+          ApnClient::Connection.expects(:new).with(@connection_config).\
+            returns(new_connection = mock('new connection'))
 
-        @delivery.instance_variable_get(:'@connection').should == nil
+          subject.send(:reset_connection!)
+
+          subject.instance_variable_get(:'@connection').should == new_connection
+        end
       end
 
+      describe '#release_connection' do
+        it 'should #push connection to connection pool and unset @connection' do
+          # We should not access through #connector
+          subject.expects(:connection).never
+
+          subject.instance_variable_set(:'@connection', connection = mock('connection'))
+          connection.expects(:close).never
+          @connection_pool.expects(:push).with(connection)
+
+          subject.send(:release_connection)
+
+          subject.instance_variable_get(:'@connection').should be_nil
+        end
+      end
     end
 
-    describe "without connection pool" do
+    context 'without a connection pool' do
       before(:each) do
-        @delivery.connection_pool = nil
+        subject.stubs(:connection_pool).returns(@connection_pool = nil)
       end
 
-      it "#connection should create new ApnClient::Connection and memoize it" do
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        ApnClient::Connection.expects(:new).once.returns(connection)
+      describe '#connection' do
+        it 'should create a connection using connection config and cache it in @connection' do
+          ApnClient::Connection.expects(:new).with(@connection_config).\
+            returns(connection = mock('connection'))
+          subject.send(:connection).should == connection
+          subject.instance_variable_get(:'@connection').should == connection
 
-        @delivery.instance_variable_set(:'@connection', nil)
-
-        @delivery.send(:connection).should == connection
-        @delivery.send(:connection).should == connection
-        @delivery.instance_variable_get(:'@connection').should == connection
+          # Test that we get same instance again
+          subject.send(:connection).should be_equal(connection)
+        end
       end
 
-      it "#release_connection should send close to @connection and nil it out" do
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        connection.expects(:close).once
-        @delivery.instance_variable_set(:'@connection', connection)
+      describe '#reset_connection' do
+        it 'should call #close on @connection and reassign new ApnClient::Connection based on connection_config' do
+          # We should not access through #connector
+          subject.expects(:connection).never
 
-        @delivery.send(:release_connection)
+          subject.instance_variable_set(:'@connection', old_connection = mock('old connection'))
+          old_connection.expects(:close)
+          ApnClient::Connection.expects(:new).with(@connection_config).\
+            returns(new_connection = mock('new connection'))
 
-        @delivery.instance_variable_get(:'@connection').should == nil
+          subject.send(:reset_connection!)
+
+          subject.instance_variable_get(:'@connection').should == new_connection
+        end
       end
 
-    end
+      describe '#release_connection' do
+        it 'should call #close on connection and unset @connection' do
+          # We should not access through #connector
+          subject.expects(:connection).never
 
-    describe "#reset_connection!" do
-      it "should close old connection and assign a new one to @connection" do
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        connection.expects(:close).once
-        @delivery.instance_variable_set(:'@connection', connection)
+          subject.instance_variable_set(:'@connection', connection = mock('connection'))
+          connection.expects(:close)
 
-        new_connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-        ApnClient::Connection.stubs(:new).returns(new_connection)
+          subject.send(:release_connection)
 
-        @delivery.send(:reset_connection!)
-
-        @delivery.instance_variable_get(:'@connection').should == new_connection
+          subject.instance_variable_get(:'@connection').should be_nil
+        end
       end
     end
 
   end
-
-
 
   describe "#process!" do
-
-    describe "given an enumerator" do
-      it "can deliver to all messages successfully and invoke on_write callback" do
-        messages = [@message1, @message2].to_enum
-        written_messages = []
-        nil_selects = 0
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_nil_select => lambda { |d| nil_selects += 1 }
+    context 'given a valid delivery instance with 3 messages' do
+      before(:each) do
+        @writes, @apns_errors, @exceptions = [], [], []
+        @options.merge!(
+          :callbacks => {
+            :on_write        => lambda { |*args| @writes << args },
+            :on_apns_error   => lambda { |*args| @apns_errors << args },
+            :on_message_skip => lambda { |*args| @exceptions << args }
           }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
+        )
+        @delivery = ApnClient::Delivery.new(@messages.first(3),@options)
+        @delivery.expects(:connection).at_least_once.\
+          returns(@connection = mock('connection'))
+        @delivery.expects(:release_connection).once
 
+        @delivery.stubs(:final_timeout).returns(@final_timeout = mock('final_timeout'))
 
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
-
-        connection.expects(:write).with(@message1.to_apns)
-        connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:readable?).with(0.1).times(2).returns(nil)
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:release_connection).once
-
-        delivery.process!
-
-        delivery.failure_count.should == 0
-        delivery.success_count.should == 2
-        delivery.total_count.should == 2
-        written_messages.should == messages.to_a
-        nil_selects.should == 2
+        @delivery.expects(:poll_timeout).at_least_once.
+          returns(@poll_timeout = mock('poll_timeout'))
       end
 
-      it "fails a message if it fails more than 3 times" do
-        messages = [@message1, @message2].to_enum
-        written_messages = []
-        exceptions = []
-        failures = []
-        read_exceptions = []
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_exception => lambda { |d, e| exceptions << e },
-            :on_failure => lambda { |d, m| failures << m },
-            :on_read_exception => lambda { |d, e| read_exceptions << e }
-          }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
+      context 'when no errors occur' do
+        before(:each) do
+          @connection.stubs(:readable?).with(@final_timeout).returns(false)
 
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
+          @connection.expects(:availability).with(@poll_timeout).times(6).\
+            returns([false, false]).then.\
+            returns([false, false]).then.\
+            returns([false, true]).then.\
+            returns([false, false]).then.\
+            returns([false, true]).then.\
+            returns([false, true])
+        end
 
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
+        it "should write all messages to socket" do
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
 
-        connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
-        connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:readable?).with(0.1).times(4).raises(RuntimeError)
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:reset_connection!).times(3)
-        delivery.expects(:release_connection).once
+          @delivery.process!
+        end
 
-        delivery.process!
+        it "should call on_write callbacks" do
+          @connection.stubs(:write)
 
-        delivery.failure_count.should == 1
-        delivery.success_count.should == 1
-        delivery.total_count.should == 2
-        written_messages.should == [@message2]
-        exceptions.size.should == 3
-        exceptions.first.is_a?(RuntimeError).should be_true
-        failures.should == [@message1]
-        read_exceptions.size.should == 4
+          @delivery.process!
+
+          @writes.should == [@delivery,@delivery,@delivery].zip(@messages)
+        end
+
       end
 
-      it "invokes on_error callback if there are errors read" do
-        messages = [@message1, @message2].to_enum
-        written_messages = []
-        exceptions = []
-        failures = []
-        read_exceptions = []
-        errors = []
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_exception => lambda { |d, e| exceptions << e },
-            :on_failure => lambda { |d, m| failures << m },
-            :on_read_exception => lambda { |d, e| read_exceptions << e },
-            :on_error => lambda { |d, message_id, error_code| errors << [message_id, error_code] }
-          }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
+      context 'when socket indicates readability' do
+        context "during run loop" do
+          before(:each) do
+            @connection.stubs(:readable?).with(@final_timeout).returns(false)
+          end
 
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
+          it "should not do anything fancy if #read_apns_error returns nil" do
+            @connection.expects(:read_apns_error).twice.returns(nil)
+            @connection.expects(:availability).with(@poll_timeout).times(6).\
+              returns([false, false]).then.\
+              returns([true, false]).then.\
+              returns([false, true]).then.\
+              returns([false, false]).then.\
+              returns([false, true]).then.\
+              returns([true, true])
 
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
 
-        connection.expects(:write).with(@message1.to_apns)
-        connection.expects(:write).with(@message2.to_apns)
-        selects = sequence('selects')
-        connection.expects(:readable?).with(0.1).returns("something").in_sequence(selects)
-        connection.expects(:readable?).with(0.1).returns(nil).in_sequence(selects)
-        connection.ssl_socket.expects(:read).returns("something")
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:reset_connection!).times(1)
-        delivery.expects(:release_connection).once
+            @delivery.process!
+          end
 
-        delivery.process!
+          it "should not do anything fancy if #read_apns_error returns error code that's not in the messages array" do
+            while an_id = rand(10000)
+             break unless @messages.map(&:message_id).include?(an_id)
+            end
+            @connection.expects(:read_apns_error).twice.\
+              returns(nil).then.\
+              returns([8,1,an_id])
+            @connection.expects(:availability).with(@poll_timeout).times(6).\
+              returns([false, false]).then.\
+              returns([true, false]).then.\
+              returns([false, true]).then.\
+              returns([false, false]).then.\
+              returns([false, true]).then.\
+              returns([true, true])
 
-        delivery.failure_count.should == 1
-        delivery.success_count.should == 1
-        delivery.total_count.should == 2
-        written_messages.should == [@message1, @message2]
-        exceptions.size.should == 0
-        failures.size.should == 0
-        errors.should == [[1752458605, 111]]
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.process!
+          end
+
+          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+            @connection.expects(:read_apns_error).twice.\
+              returns(nil).then.\
+              returns([8,7,@messages[0].message_id])
+            @connection.expects(:availability).with(@poll_timeout).times(7).\
+              returns([false, false]).then.\
+              returns([true, false]).then.\
+              returns([false, true]).then.\
+              returns([false, false]).then.\
+              returns([false, true]).then.\
+              returns([true, true]).then.\
+              returns([nil, true])
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.process!
+          end
+        end
+        context "durin final check" do
+          before(:each) do
+            @connection.stubs(:availability).with(@poll_timeout).returns([false, true])
+          end
+
+          it "should not do anything fancy if #read_apns_error returns nil" do
+            @connection.expects(:readable?).with(@final_timeout).returns(true)
+            @connection.expects(:read_apns_error).returns(nil)
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.process!
+          end
+
+          it "should not do anything fancy if #read_apns_error returns error code that's not in the messages array" do
+            while an_id = rand(10000)
+             break unless @messages.map(&:message_id).include?(an_id)
+            end
+            @connection.expects(:readable?).with(@final_timeout).returns(true)
+            @connection.expects(:read_apns_error).returns([8,1,an_id])
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.process!
+          end
+
+          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+            @connection.expects(:readable?).twice.with(@final_timeout).times(2).\
+              returns(true).then.returns(false)
+            @connection.expects(:read_apns_error).returns([8,4,@messages[1].message_id])
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.process!
+          end
+        end
       end
+
+      context 'when errors occur' do
+        it "should handle exception in connection#availability and still send message" do
+          @connection.expects(:availability).with(@poll_timeout).at_least(2).\
+            raises(IOError).then.\
+            returns([nil, true])
+
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
+
+          @delivery.expects(:reset_connection!)
+          @delivery.expects(:read_final_error).times(2)
+
+          @delivery.process!
+        end
+
+        it "should handle exception in #read_error and still send message" do
+          @connection.stubs(:availability).with(@poll_timeout).\
+            returns([true, true])
+          @delivery.expects(:read_error).times(4).\
+            raises(IOError).then.\
+            returns(nil)
+
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
+
+          @delivery.expects(:reset_connection!)
+          @delivery.expects(:read_final_error).times(2)
+
+          @delivery.process!
+        end
+
+        it "should handle exception in #write_message and still send message" do
+          @connection.stubs(:availability).with(@poll_timeout).\
+            returns([false, true])
+
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq).raises(IOError)
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
+
+          @delivery.expects(:reset_connection!)
+          @delivery.expects(:read_final_error).times(2)
+
+          @delivery.process!
+        end
+
+        it "should handle exception in #read_final_error and still send message" do
+          @connection.stubs(:availability).with(@poll_timeout).\
+            returns([false, true])
+          @delivery.expects(:read_final_error).times(2).\
+            raises(IOError).then.\
+            returns(nil)
+
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
+
+
+          @delivery.expects(:reset_connection!)
+
+          @delivery.process!
+        end
+
+        it "should handle exception in #read_final_error in exception handling and still send message" do
+          @connection.stubs(:availability).with(@poll_timeout).\
+            returns([false, true])
+          @delivery.expects(:read_final_error).times(2).\
+            raises(IOError).then.\
+            raises(IOError)
+
+          write_seq = sequence('writes')
+          @connection.expects(:write).with(@messages[0].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[1].to_apns).\
+            in_sequence(write_seq)
+          @connection.expects(:write).with(@messages[2].to_apns).\
+            in_sequence(write_seq)
+
+
+          @delivery.expects(:reset_connection!)
+
+          @delivery.process!
+        end
+
+        it "should handle exceptions according to  exception_limit and exception_limit_per_message" do
+          @connection.stubs(:availability).with(@poll_timeout).\
+            returns([false, true])
+          @connection.stubs(:readable?).with(@final_timeout).\
+            returns(false)
+
+          @delivery.stubs(:exception_limit).returns(8)
+          @delivery.stubs(:exception_limit_per_message).returns(3)
+
+          write_seq = sequence('writes')
+          3.times do
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+          end
+          3.times do
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+          end
+          2.times do
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+          end
+
+          @delivery.expects(:reset_connection!).times(8)
+
+          lambda { @delivery.process! }.should raise_error(ApnClient::ExceptionLimitReached)
+        end
+
+        context 'and socket returns readability' do
+          it "should just reset connection and move on if #read_apns_error returns nil" do
+            @connection.stubs(:availability).with(@poll_timeout).\
+              returns([false, true])
+            @connection.stubs(:readable?).with(@final_timeout).times(2).\
+              returns(true).then.\
+              returns(false)
+            @connection.expects(:read_apns_error).returns(nil)
+
+            @delivery.stubs(:exception_limit).returns(8)
+            @delivery.stubs(:exception_limit_per_message).returns(3)
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.expects(:reset_connection!).times(1)
+
+            @delivery.process!
+          end
+
+          it "should just move on if #read_apns_error returns error code that's not in the messages array" do
+            @connection.stubs(:availability).with(@poll_timeout).\
+              returns([false, true])
+            @connection.stubs(:readable?).with(@final_timeout).times(2).\
+              returns(true).then.\
+              returns(false)
+            @connection.expects(:read_apns_error).\
+              returns([8,7,((1..1000).to_a-@messages.map(&:message_id)).sample])
+
+            @delivery.stubs(:exception_limit).returns(8)
+            @delivery.stubs(:exception_limit_per_message).returns(3)
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.expects(:reset_connection!).times(1)
+
+            @delivery.process!
+          end
+
+          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+            @connection.stubs(:availability).with(@poll_timeout).\
+              returns([false, true])
+            @connection.stubs(:readable?).with(@final_timeout).times(2).\
+              returns(true).then.\
+              returns(false)
+            @connection.expects(:read_apns_error).\
+              returns([8,7,@messages[0].message_id])
+
+            @delivery.stubs(:exception_limit).returns(8)
+            @delivery.stubs(:exception_limit_per_message).returns(3)
+
+            write_seq = sequence('writes')
+            @connection.expects(:write).with(@messages[0].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq).raises(IOError)
+            @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+
+            @delivery.expects(:reset_connection!).times(1)
+
+            @delivery.process!
+
+          end
+        end
+      end
+
     end
-
-    describe "given an array" do
-      it "can deliver to all messages successfully and invoke on_write callback" do
-        messages = [@message1, @message2]
-        written_messages = []
-        nil_selects = 0
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_nil_select => lambda { |d| nil_selects += 1 }
-          }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
-
-
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
-
-        connection.expects(:write).with(@message1.to_apns)
-        connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:readable?).with(0.1).times(2).returns(nil)
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:release_connection).once
-
-        delivery.process!
-
-        delivery.failure_count.should == 0
-        delivery.success_count.should == 2
-        delivery.total_count.should == 2
-        written_messages.should == messages
-        nil_selects.should == 2
-      end
-
-      it "fails a message if it fails more than 3 times" do
-        messages = [@message1, @message2]
-        written_messages = []
-        exceptions = []
-        failures = []
-        read_exceptions = []
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_exception => lambda { |d, e| exceptions << e },
-            :on_failure => lambda { |d, m| failures << m },
-            :on_read_exception => lambda { |d, e| read_exceptions << e }
-          }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
-
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
-
-        connection.expects(:write).with(@message1.to_apns).times(3).raises(RuntimeError)
-        connection.expects(:write).with(@message2.to_apns)
-        connection.expects(:readable?).with(0.1).times(4).raises(RuntimeError)
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:reset_connection!).times(3)
-        delivery.expects(:release_connection).once
-
-        delivery.process!
-
-        delivery.failure_count.should == 1
-        delivery.success_count.should == 1
-        delivery.total_count.should == 2
-        written_messages.should == [@message2]
-        exceptions.size.should == 3
-        exceptions.first.is_a?(RuntimeError).should be_true
-        failures.should == [@message1]
-        read_exceptions.size.should == 4
-      end
-
-      it "invokes on_error callback if there are errors read" do
-        messages = [@message1, @message2]
-        written_messages = []
-        exceptions = []
-        failures = []
-        read_exceptions = []
-        errors = []
-        callbacks = {
-            :on_write => lambda { |d, m| written_messages << m },
-            :on_exception => lambda { |d, e| exceptions << e },
-            :on_failure => lambda { |d, m| failures << m },
-            :on_read_exception => lambda { |d, e| read_exceptions << e },
-            :on_error => lambda { |d, message_id, error_code| errors << [message_id, error_code] }
-          }
-        delivery = create_delivery(messages.dup, :callbacks => callbacks, :connection_config => @connection_config)
-
-        connection = mock('connection')
-        connection.stubs(:ssl_socket).returns(mock('ssl_socket'))
-
-        apns = mock('apnsstr')
-        @message2.stubs(:to_apns).returns(apns)
-
-        connection.expects(:write).with(@message1.to_apns)
-        connection.expects(:write).with(@message2.to_apns)
-        selects = sequence('selects')
-        connection.expects(:readable?).with(0.1).returns("something").in_sequence(selects)
-        connection.expects(:readable?).with(0.1).returns(nil).in_sequence(selects)
-        connection.ssl_socket.expects(:read).returns("something")
-        delivery.stubs(:connection).returns(connection)
-        delivery.expects(:reset_connection!).times(1)
-        delivery.expects(:release_connection).once
-
-        delivery.process!
-
-        delivery.failure_count.should == 1
-        delivery.success_count.should == 1
-        delivery.total_count.should == 2
-        written_messages.should == [@message1, @message2]
-        exceptions.size.should == 0
-        failures.size.should == 0
-        errors.should == [[1752458605, 111]]
-      end
-    end
-
   end
 
-  def create_delivery(messages, options = {})
-    delivery = ApnClient::Delivery.new(messages, options)
-    delivery.messages.should == messages
-    delivery.callbacks.should == options[:callbacks]
-    delivery.exception_count.should == 0
-    delivery.success_count.should == 0
-    delivery.failure_count.should == 0
-    delivery.consecutive_failure_count.should == 0
-    delivery.started_at.should be_nil
-    delivery.finished_at.should be_nil
-    delivery.elapsed.should == 0
-    delivery.consecutive_failure_limit.should == 10
-    delivery.exception_limit.should == 3
-    delivery.sleep_on_exception.should == 1
-    delivery
-  end
 end
