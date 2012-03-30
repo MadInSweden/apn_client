@@ -86,11 +86,9 @@ module ApnClient
         if has_next_message?
           readable, writable = connection.availability(self.poll_timeout)
 
-          if readable
-            read_error
-          end
-
-          if writable and has_next_message?
+          if readable and read_error
+            reset_connection!
+          elsif writable
             write_message
             next_message!
           end
@@ -123,11 +121,11 @@ module ApnClient
         if message_id
           invoke_callback(:on_apns_error, error_code, message_id)
           rewind_messages!(message_id)
+          return error_code
         end
       end
 
       def write_message
-        next_message.message_id ||= connection.next_message_id
         connection.write(next_message.to_apns)
         invoke_callback(:on_write, next_message)
       end

@@ -279,25 +279,29 @@ describe ApnClient::Delivery do
             @delivery.process!
           end
 
-          it "should not do anything fancy if #read_apns_error returns error code that's not in the messages array" do
+          it "should reset_socket if #read_apns_error returns error code that's not in the messages array" do
             while an_id = rand(10000)
              break unless @messages.map(&:message_id).include?(an_id)
             end
-            @connection.expects(:read_apns_error).twice.\
+            @connection.expects(:read_apns_error).times(3).\
               returns(nil).then.\
-              returns([8,1,an_id])
-            @connection.expects(:availability).with(@poll_timeout).times(6).\
+              returns([8,1,an_id]).then.\
+              returns(nil)
+            @connection.expects(:availability).with(@poll_timeout).times(7).\
               returns([false, false]).then.\
               returns([true, false]).then.\
               returns([false, true]).then.\
               returns([false, false]).then.\
               returns([false, true]).then.\
+              returns([true, true]).then.\
               returns([true, true])
 
             write_seq = sequence('writes')
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @delivery.expects(:reset_connection!).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
@@ -306,15 +310,17 @@ describe ApnClient::Delivery do
           end
 
           it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
-            @connection.expects(:read_apns_error).twice.\
+            @connection.expects(:read_apns_error).times(3).\
               returns(nil).then.\
-              returns([8,7,@messages[0].message_id])
-            @connection.expects(:availability).with(@poll_timeout).times(7).\
+              returns([8,7,@messages[0].message_id]).then.\
+              returns(nil)
+            @connection.expects(:availability).with(@poll_timeout).times(8).\
               returns([false, false]).then.\
               returns([true, false]).then.\
               returns([false, true]).then.\
               returns([false, false]).then.\
               returns([false, true]).then.\
+              returns([true, true]).then.\
               returns([true, true]).then.\
               returns([nil, true])
 
@@ -322,6 +328,8 @@ describe ApnClient::Delivery do
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
+              in_sequence(write_seq)
+            @delivery.expects(:reset_connection!).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
               in_sequence(write_seq)
