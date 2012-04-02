@@ -259,7 +259,7 @@ describe ApnClient::Delivery do
             @connection.stubs(:readable?).with(@final_timeout).returns(false)
           end
 
-          it "should not do anything fancy if #read_apns_error returns nil" do
+          it "should just move on if #read_apns_error returns nil" do
             @connection.expects(:read_apns_error).twice.returns(nil)
             @connection.expects(:availability).with(@poll_timeout).times(6).\
               returns([false, false]).then.\
@@ -282,7 +282,7 @@ describe ApnClient::Delivery do
             @apns_errors.should be_empty
           end
 
-          it "should reset_socket if #read_apns_error returns error code that's not in the messages array" do
+          it "should just reset connection and move on if #read_apns_error returns error code that's not in the messages array" do
             apns_error = [8,1,((1..1000).to_a - @messages.map(&:message_id)).sample]
             @connection.expects(:read_apns_error).times(3).\
               returns(nil).then.\
@@ -312,7 +312,7 @@ describe ApnClient::Delivery do
             @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
-          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+          it "should reset connection and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
             @connection.expects(:read_apns_error).times(3).\
               returns(nil).then.\
               returns([8,7,@messages[0].message_id]).then.\
@@ -344,12 +344,12 @@ describe ApnClient::Delivery do
             @apns_errors.should == [[@delivery,7,@messages[0].message_id]]
           end
         end
-        context "durin final check" do
+        context "during final check" do
           before(:each) do
             @connection.stubs(:availability).with(@poll_timeout).returns([false, true])
           end
 
-          it "should not do anything fancy if #read_apns_error returns nil" do
+          it "should just move on if #read_apns_error returns nil" do
             @connection.expects(:readable?).with(@final_timeout).returns(true)
             @connection.expects(:read_apns_error).returns(nil)
 
@@ -568,14 +568,14 @@ describe ApnClient::Delivery do
             write_seq = sequence('writes')
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq).raises(IOError)
+            @delivery.expects(:reset_connection!).\
+              in_sequence(write_seq)
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
-
-            @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
 
@@ -585,7 +585,7 @@ describe ApnClient::Delivery do
             @apns_errors.should be_empty
           end
 
-          it "should just move on if #read_apns_error returns error code that's not in the messages array" do
+          it "should just reset connection and move on if #read_apns_error returns error code that's not in the messages array" do
             @connection.stubs(:availability).with(@poll_timeout).\
               returns([false, true])
             @connection.stubs(:readable?).with(@final_timeout).times(2).\
@@ -601,14 +601,14 @@ describe ApnClient::Delivery do
             write_seq = sequence('writes')
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq).raises(IOError)
+            @delivery.expects(:reset_connection!).\
+              in_sequence(write_seq)
             @connection.expects(:write).with(@messages[0].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
-
-            @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
 
@@ -618,7 +618,7 @@ describe ApnClient::Delivery do
             @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
-          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+          it "should reset connection and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
             @connection.stubs(:availability).with(@poll_timeout).\
               returns([false, true])
             @connection.stubs(:readable?).with(@final_timeout).times(2).\
@@ -637,12 +637,12 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq).raises(IOError)
+            @delivery.expects(:reset_connection!).\
+              in_sequence(write_seq)
             @connection.expects(:write).with(@messages[1].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
-
-            @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
 
