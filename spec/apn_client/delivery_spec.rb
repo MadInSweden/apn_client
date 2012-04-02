@@ -251,6 +251,16 @@ describe ApnClient::Delivery do
           @writes.should == [@delivery,@delivery,@delivery].zip(@messages)
         end
 
+        it "should not call other callbacks than write"do
+          @connection.stubs(:write)
+
+          @delivery.process!
+
+          @apns_errors.should be_empty
+          @message_skips.should be_empty
+          @exceptions.should be_empty
+        end
+
       end
 
       context 'when socket indicates readability' do
@@ -552,6 +562,9 @@ describe ApnClient::Delivery do
           @delivery.expects(:reset_connection!).times(8)
 
           lambda { @delivery.process! }.should raise_error(ApnClient::ExceptionLimitReached)
+
+          @message_skips.size.should == 2
+          @message_skips.each_with_index { |ms,i| ms.should == [@delivery, @messages[i]] }
 
           @exceptions.size.should == 8
           @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
