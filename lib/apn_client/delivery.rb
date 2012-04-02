@@ -120,7 +120,7 @@ module ApnClient
       def read_error
         command, error_code, message_id = connection.read_apns_error
         if message_id
-          invoke_callback(:on_apns_error, error_code, message_id)
+          invoke_callback(:on_apns_error, error_code, message_id, find_message(message_id))
           rewind_messages!(message_id)
           return error_code
         end

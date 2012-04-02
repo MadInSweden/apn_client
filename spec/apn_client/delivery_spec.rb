@@ -319,7 +319,7 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
-            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2], nil]]
           end
 
           it "should reset connection and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -351,7 +351,7 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
-            @apns_errors.should == [[@delivery,7,@messages[0].message_id]]
+            @apns_errors.should == [[@delivery,7,@messages[0].message_id, @messages[0]]]
           end
         end
         context "during final check" do
@@ -393,7 +393,7 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
-            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2], nil]]
           end
 
           it "should reset connecation and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -415,7 +415,7 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
-            @apns_errors.should == [[@delivery, 4, @messages[1].message_id]]
+            @apns_errors.should == [[@delivery, 4, @messages[1].message_id, @messages[1]]]
           end
         end
       end
@@ -632,7 +632,7 @@ describe ApnClient::Delivery do
             @exceptions.size.should == 1
             @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
 
-            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2], nil]]
           end
 
           it "should reset connection and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -666,7 +666,7 @@ describe ApnClient::Delivery do
             @exceptions.size.should == 1
             @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
 
-            @apns_errors.should == [[@delivery, 7, @messages[0].message_id]]
+            @apns_errors.should == [[@delivery, 7, @messages[0].message_id, @messages[0]]]
           end
         end
       end
