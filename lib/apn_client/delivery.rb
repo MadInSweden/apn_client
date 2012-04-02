@@ -132,7 +132,7 @@ module ApnClient
       end
 
       def exception!(e)
-        invoke_callback(:on_exception, e, next_message)
+        invoke_callback(:on_exception, e)
 
         self.exceptions << e
         if self.exceptions.size >= self.exception_limit

@@ -440,7 +440,7 @@ describe ApnClient::Delivery do
           @delivery.process!
 
           @exceptions.size.should == 1
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(RuntimeError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(RuntimeError) }
         end
 
         it "should handle exception in #read_error and still send message" do
@@ -464,7 +464,7 @@ describe ApnClient::Delivery do
           @delivery.process!
 
           @exceptions.size.should == 1
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #write_message and still send message" do
@@ -487,7 +487,7 @@ describe ApnClient::Delivery do
           @delivery.process!
 
           @exceptions.size.should == 1
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #read_final_error and still send message" do
@@ -510,7 +510,7 @@ describe ApnClient::Delivery do
           @delivery.process!
 
           @exceptions.size.should == 1
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #read_final_error in exception handling and still send message" do
@@ -533,7 +533,7 @@ describe ApnClient::Delivery do
           @delivery.process!
 
           @exceptions.size.should == 1
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exceptions according to  exception_limit and exception_limit_per_message" do
@@ -567,7 +567,7 @@ describe ApnClient::Delivery do
           @message_skips.each_with_index { |ms,i| ms.should == [@delivery, @messages[i]] }
 
           @exceptions.size.should == 8
-          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+          @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         context 'and socket returns readability' do
@@ -597,7 +597,7 @@ describe ApnClient::Delivery do
             @delivery.process!
 
             @exceptions.size.should == 1
-            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+            @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should be_empty
           end
@@ -630,7 +630,7 @@ describe ApnClient::Delivery do
             @delivery.process!
 
             @exceptions.size.should == 1
-            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+            @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
@@ -664,7 +664,7 @@ describe ApnClient::Delivery do
             @delivery.process!
 
             @exceptions.size.should == 1
-            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
+            @exceptions.each { |e| e.size.should == 2; e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should == [[@delivery, 7, @messages[0].message_id]]
           end
