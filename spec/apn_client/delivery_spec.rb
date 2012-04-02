@@ -277,15 +277,15 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should be_empty
           end
 
           it "should reset_socket if #read_apns_error returns error code that's not in the messages array" do
-            while an_id = rand(10000)
-             break unless @messages.map(&:message_id).include?(an_id)
-            end
+            apns_error = [8,1,((1..1000).to_a - @messages.map(&:message_id)).sample]
             @connection.expects(:read_apns_error).times(3).\
               returns(nil).then.\
-              returns([8,1,an_id]).then.\
+              returns(apns_error).then.\
               returns(nil)
             @connection.expects(:availability).with(@poll_timeout).times(7).\
               returns([false, false]).then.\
@@ -307,6 +307,8 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
           it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -337,6 +339,8 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should == [[@delivery,7,@messages[0].message_id]]
           end
         end
         context "durin final check" do
@@ -357,14 +361,14 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should be_empty
           end
 
           it "should not do anything fancy if #read_apns_error returns error code that's not in the messages array" do
-            while an_id = rand(10000)
-             break unless @messages.map(&:message_id).include?(an_id)
-            end
             @connection.expects(:readable?).with(@final_timeout).returns(true)
-            @connection.expects(:read_apns_error).returns([8,1,an_id])
+            apns_error = [8,1,((1..1000).to_a - @messages.map(&:message_id)).sample]
+            @connection.expects(:read_apns_error).returns(apns_error)
 
             write_seq = sequence('writes')
             @connection.expects(:write).with(@messages[0].to_apns).\
@@ -375,6 +379,8 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
           it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -393,6 +399,8 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
 
             @delivery.process!
+
+            @apns_errors.should == [[@delivery, 4, @messages[1].message_id]]
           end
         end
       end
@@ -553,6 +561,8 @@ describe ApnClient::Delivery do
             @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
+
+            @apns_errors.should be_empty
           end
 
           it "should just move on if #read_apns_error returns error code that's not in the messages array" do
@@ -561,8 +571,9 @@ describe ApnClient::Delivery do
             @connection.stubs(:readable?).with(@final_timeout).times(2).\
               returns(true).then.\
               returns(false)
+            apns_error = [8,7,((1..1000).to_a-@messages.map(&:message_id)).sample]
             @connection.expects(:read_apns_error).\
-              returns([8,7,((1..1000).to_a-@messages.map(&:message_id)).sample])
+              returns(apns_error)
 
             @delivery.stubs(:exception_limit).returns(8)
             @delivery.stubs(:exception_limit_per_message).returns(3)
@@ -580,6 +591,8 @@ describe ApnClient::Delivery do
             @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
+
+            @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
           it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
@@ -610,6 +623,8 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
+
+            @apns_errors.should == [[@delivery, 7, @messages[0].message_id]]
           end
         end
       end
