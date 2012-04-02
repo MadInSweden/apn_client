@@ -198,12 +198,13 @@ describe ApnClient::Delivery do
   describe "#process!" do
     context 'given a valid delivery instance with 3 messages' do
       before(:each) do
-        @writes, @apns_errors, @exceptions = [], [], []
+        @writes, @apns_errors, @message_skips, @exceptions = [], [], [], []
         @options.merge!(
           :callbacks => {
             :on_write        => lambda { |*args| @writes << args },
             :on_apns_error   => lambda { |*args| @apns_errors << args },
-            :on_message_skip => lambda { |*args| @exceptions << args }
+            :on_message_skip => lambda { |*args| @message_skips << args },
+            :on_exception    => lambda { |*args| @exceptions << args }
           }
         )
         @delivery = ApnClient::Delivery.new(@messages.first(3),@options)
@@ -408,7 +409,7 @@ describe ApnClient::Delivery do
       context 'when errors occur' do
         it "should handle exception in connection#availability and still send message" do
           @connection.expects(:availability).with(@poll_timeout).at_least(2).\
-            raises(IOError).then.\
+            raises(RuntimeError).then.\
             returns([nil, true])
 
           write_seq = sequence('writes')
@@ -423,6 +424,9 @@ describe ApnClient::Delivery do
           @delivery.expects(:read_final_error).times(2)
 
           @delivery.process!
+
+          @exceptions.size.should == 1
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(RuntimeError) }
         end
 
         it "should handle exception in #read_error and still send message" do
@@ -444,6 +448,9 @@ describe ApnClient::Delivery do
           @delivery.expects(:read_final_error).times(2)
 
           @delivery.process!
+
+          @exceptions.size.should == 1
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #write_message and still send message" do
@@ -464,6 +471,9 @@ describe ApnClient::Delivery do
           @delivery.expects(:read_final_error).times(2)
 
           @delivery.process!
+
+          @exceptions.size.should == 1
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #read_final_error and still send message" do
@@ -481,10 +491,12 @@ describe ApnClient::Delivery do
           @connection.expects(:write).with(@messages[2].to_apns).\
             in_sequence(write_seq)
 
-
           @delivery.expects(:reset_connection!)
 
           @delivery.process!
+
+          @exceptions.size.should == 1
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exception in #read_final_error in exception handling and still send message" do
@@ -502,10 +514,12 @@ describe ApnClient::Delivery do
           @connection.expects(:write).with(@messages[2].to_apns).\
             in_sequence(write_seq)
 
-
           @delivery.expects(:reset_connection!)
 
           @delivery.process!
+
+          @exceptions.size.should == 1
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         it "should handle exceptions according to  exception_limit and exception_limit_per_message" do
@@ -534,6 +548,9 @@ describe ApnClient::Delivery do
           @delivery.expects(:reset_connection!).times(8)
 
           lambda { @delivery.process! }.should raise_error(ApnClient::ExceptionLimitReached)
+
+          @exceptions.size.should == 8
+          @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
         end
 
         context 'and socket returns readability' do
@@ -561,6 +578,9 @@ describe ApnClient::Delivery do
             @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
+
+            @exceptions.size.should == 1
+            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should be_empty
           end
@@ -591,6 +611,9 @@ describe ApnClient::Delivery do
             @delivery.expects(:reset_connection!).times(1)
 
             @delivery.process!
+
+            @exceptions.size.should == 1
+            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
@@ -623,6 +646,8 @@ describe ApnClient::Delivery do
 
             @delivery.process!
 
+            @exceptions.size.should == 1
+            @exceptions.each { |e| e[0].should == @delivery; e[1].should be_an(IOError) }
 
             @apns_errors.should == [[@delivery, 7, @messages[0].message_id]]
           end
