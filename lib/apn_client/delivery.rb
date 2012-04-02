@@ -93,7 +93,7 @@ module ApnClient
             next_message!
           end
         else
-          read_final_error
+          reset_connection! if read_final_error
           return unless has_next_message?
         end
       end

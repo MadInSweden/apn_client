@@ -366,7 +366,7 @@ describe ApnClient::Delivery do
             @apns_errors.should be_empty
           end
 
-          it "should not do anything fancy if #read_apns_error returns error code that's not in the messages array" do
+          it "should just reset connection and move on if #read_apns_error returns error code that's not in the messages array" do
             @connection.expects(:readable?).with(@final_timeout).returns(true)
             apns_error = [8,1,((1..1000).to_a - @messages.map(&:message_id)).sample]
             @connection.expects(:read_apns_error).returns(apns_error)
@@ -378,13 +378,15 @@ describe ApnClient::Delivery do
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
+            @delivery.expects(:reset_connection!).\
+              in_sequence(write_seq)
 
             @delivery.process!
 
             @apns_errors.should == [[@delivery, apns_error[1], apns_error[2]]]
           end
 
-          it "should resend messages sent after if #read_apns_error returns error code for message id in messages array" do
+          it "should reset connecation and resend messages sent after if #read_apns_error returns error code for message id in messages array" do
             @connection.expects(:readable?).twice.with(@final_timeout).times(2).\
               returns(true).then.returns(false)
             @connection.expects(:read_apns_error).returns([8,4,@messages[1].message_id])
@@ -395,6 +397,8 @@ describe ApnClient::Delivery do
             @connection.expects(:write).with(@messages[1].to_apns).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
+              in_sequence(write_seq)
+            @delivery.expects(:reset_connection!).\
               in_sequence(write_seq)
             @connection.expects(:write).with(@messages[2].to_apns).\
               in_sequence(write_seq)
