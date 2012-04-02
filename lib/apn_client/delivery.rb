@@ -186,7 +186,7 @@ module ApnClient
       #           available in #messages
       def rewind_messages!(message_id)
 
-        if message = self.messages.find { |message| message.message_id == message_id }
+        if message = find_message(message_id)
           self.messages.rewind
           # We return after we move the pointer from message with message_id,
           # as we want to find the first non-failed message.
@@ -195,6 +195,11 @@ module ApnClient
           end
         end
 
+      end
+
+      # Internal: Find a message in messages by message_id
+      def find_message(message_id)
+        self.messages.find { |message| message.message_id == message_id }
       end
 
       ### Callbacks
