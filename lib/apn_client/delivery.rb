@@ -47,6 +47,7 @@ module ApnClient
     #            :callbacks                     - A hash with callbacks, available are:
     #                                             :on_write proc(ApnClient::Delivery, ApnClient::Message)
     #                                             :on_message_skip proc(ApnClient::Delivery, ApnClient::Message)
+    #                                             :on_exception proc(ApnClient::Delivery, Exception, ApnClient::Message)
     #                                             :on_apns_error proc(ApnClient::Delivery, error_code, message_id)
     #                                             (optional, default: {})
     #
