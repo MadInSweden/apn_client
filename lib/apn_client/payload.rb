@@ -25,6 +25,16 @@ module ApnClient
     # @param [Hash] rootless_aps The aps data to send to apple, without the 'aps' root node.
     # @param [Hash] rootless_customs The custom data to send to apple, without the 'custom' root node.
     #
+    class << self
+      def logger
+        @logger ||= Logger.new(Rails.root.join('log').join('apn_client.log'))
+      end
+
+      def logger=(logger)
+        @logger = logger
+      end
+    end
+
     def initialize(rootless_aps, rootless_custom = nil)
       payload = {}
       payload['aps'] = rootless_aps
@@ -48,7 +58,10 @@ module ApnClient
 
     private
       def check_size!
-        raise(PayloadTooLarge.new(self)) if self.bytesize > PAYLOAD_MAX_SIZE
+        if self.bytesize > PAYLOAD_MAX_SIZE
+          Payload.logger.error("Payload too big: '#{self.to_json}'")
+          raise(PayloadTooLarge.new(self))
+        end
       end
   end
 end
