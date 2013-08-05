@@ -21,6 +21,7 @@ module ApnClient
       ssl_ctx.cert = OpenSSL::X509::Certificate.new(cert)
 
       @tcp_socket = TCPSocket.new(host, port)
+      @tcp_socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_KEEPALIVE, true)
       @ssl_socket = OpenSSL::SSL::SSLSocket.new(@tcp_socket, ssl_ctx)
       @ssl_socket.sync = true
       @ssl_socket.connect
